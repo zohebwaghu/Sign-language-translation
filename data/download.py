@@ -40,8 +40,19 @@ def load_dataset_split(split: str = "train", streaming: bool = True):
         DATASET_NAME,
         split=hf_split,
         streaming=streaming,
-        trust_remote_code=True,
     )
+
+    # Disable automatic video decoding on all Video columns — we decode with PyAV
+    # ourselves in extract_frames(). Without this, datasets>=4.x requires torchcodec.
+    try:
+        from datasets import Video as HFVideo
+        _no_decode = HFVideo(decode=False)
+        for col in list(dataset.features.keys()):
+            if hasattr(dataset.features[col], "decode"):
+                dataset = dataset.cast_column(col, _no_decode)
+    except Exception:
+        pass
+
     return dataset
 
 

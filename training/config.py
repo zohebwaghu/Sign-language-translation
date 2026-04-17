@@ -18,7 +18,7 @@ TOKENIZER_MODEL = ROOT / "data" / "tokenizer.model"
 # ─── Dataset ──────────────────────────────────────────────────────────────────
 
 DATASET_NAME = "bdanko/how2sign-rgb-front-clips"
-DATASET_SPLITS = {"train": "train", "val": "val", "test": "test"}
+DATASET_SPLITS = {"train": "train", "val": "validation", "test": "test"}
 
 # ─── Video / Frame ────────────────────────────────────────────────────────────
 

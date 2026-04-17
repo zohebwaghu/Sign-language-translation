@@ -13,7 +13,8 @@ import cv2
 
 try:
     import mediapipe as mp
-    _MP_AVAILABLE = True
+    # mp.solutions was removed in MediaPipe 0.10 — check it actually exists
+    _MP_AVAILABLE = hasattr(mp, "solutions") and hasattr(mp.solutions, "holistic")
 except ImportError:
     _MP_AVAILABLE = False
 

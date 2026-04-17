@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, List
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -69,65 +69,102 @@ class How2SignDataset(Dataset):
         return len(self.records)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        record = self.records[idx]
-
-        # ── Extract text ──────────────────────────────────────────────────
-        text: str = record.get("translation", record.get("sentence", ""))
-
-        # ── Extract frames ────────────────────────────────────────────────
-        video_bytes: bytes = record.get("video", b"")
-        if isinstance(video_bytes, dict):
-            # HuggingFace sometimes wraps as {"bytes": ..., "path": ...}
-            video_bytes = video_bytes.get("bytes", b"")
-
-        frames, frame_mask = extract_frames(
-            video_bytes,
-            max_frames=self.max_frames,
-            img_size=self.img_size,
+        return _process_record(
+            self.records[idx], self.tokenizer,
+            self.max_frames, self.img_size, self.max_text_len, self.extract_lm,
         )
-        # frames: (MAX_FRAMES, 3, H, W)
 
-        # ── Extract landmarks + heatmaps ──────────────────────────────────
-        landmarks = torch.zeros(self.max_frames, N_LANDMARKS, 2, dtype=torch.float32)
-        heatmaps  = torch.zeros(self.max_frames, self.img_size, self.img_size, dtype=torch.float32)
 
-        if self.extract_lm and frame_mask.any():
-            # Convert normalised tensor back to uint8 for MediaPipe
-            import torchvision.transforms.functional as TF
-            from training.config import IMAGENET_MEAN, IMAGENET_STD
+def _process_record(
+    record: Dict[str, Any],
+    tokenizer,
+    max_frames: int,
+    img_size: int,
+    max_text_len: int,
+    extract_lm: bool,
+) -> Dict[str, Any]:
+    """Shared preprocessing logic for both map-style and iterable datasets."""
+    _json = record.get("json", {})
+    text: str = (
+        _json.get("SENTENCE")
+        or record.get("translation")
+        or record.get("sentence")
+        or ""
+    )
 
-            mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
-            std  = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    video_bytes: bytes = record.get("mp4") or record.get("video") or b""
+    if isinstance(video_bytes, dict):
+        video_bytes = video_bytes.get("bytes") or b""
 
-            for i in range(self.max_frames):
-                if not frame_mask[i]:
-                    break
-                # Denormalize and convert to uint8 numpy
-                frame_t = frames[i] * std + mean        # (3, H, W)
-                frame_np = (frame_t.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype(np.uint8)
+    frames, frame_mask = extract_frames(video_bytes, max_frames=max_frames, img_size=img_size)
 
-                lm = extract_landmarks(frame_np)        # (75, 2)
-                hm = create_landmark_heatmap(lm, self.img_size)  # (H, W)
+    landmarks = torch.zeros(max_frames, N_LANDMARKS, 2, dtype=torch.float32)
+    heatmaps  = torch.zeros(max_frames, img_size, img_size, dtype=torch.float32)
 
-                landmarks[i] = torch.from_numpy(lm)
-                heatmaps[i]  = torch.from_numpy(hm)
+    if extract_lm and frame_mask.any():
+        from training.config import IMAGENET_MEAN, IMAGENET_STD
+        mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+        std  = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+        for i in range(max_frames):
+            if not frame_mask[i]:
+                break
+            frame_t  = frames[i] * std + mean
+            frame_np = (frame_t.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype(np.uint8)
+            lm = extract_landmarks(frame_np)
+            hm = create_landmark_heatmap(lm, img_size)
+            landmarks[i] = torch.from_numpy(lm)
+            heatmaps[i]  = torch.from_numpy(hm)
 
-        # ── Tokenize text ─────────────────────────────────────────────────
-        token_ids, text_mask = self.tokenizer.encode_batch(
-            [text], max_len=self.max_text_len, pad=True
-        )
-        token_ids = token_ids[0]   # (MAX_TEXT_LEN,)
-        text_mask = text_mask[0]   # (MAX_TEXT_LEN,)
+    token_ids, text_mask = tokenizer.encode_batch([text], max_len=max_text_len, pad=True)
+    return {
+        "frames":     frames,
+        "landmarks":  landmarks,
+        "heatmaps":   heatmaps,
+        "token_ids":  token_ids[0],
+        "frame_mask": frame_mask,
+        "text_mask":  text_mask[0],
+        "text":       text,
+    }
 
-        return {
-            "frames":     frames,       # (T, 3, H, W)
-            "landmarks":  landmarks,    # (T, 75, 2)
-            "heatmaps":   heatmaps,     # (T, H, W)
-            "token_ids":  token_ids,    # (MAX_TEXT_LEN,)
-            "frame_mask": frame_mask,   # (T,)  bool
-            "text_mask":  text_mask,    # (MAX_TEXT_LEN,)  bool
-            "text":       text,         # raw string (eval)
-        }
+
+class How2SignIterDataset(IterableDataset):
+    """
+    Streaming PyTorch IterableDataset for How2Sign.
+
+    Wraps a HuggingFace IterableDataset and processes each clip on-the-fly,
+    so video bytes are never all loaded into RAM at once. Supports
+    multi-worker DataLoader via round-robin worker splitting.
+    """
+
+    def __init__(
+        self,
+        hf_dataset,
+        tokenizer,
+        max_frames: int = MAX_FRAMES,
+        img_size: int = IMG_SIZE,
+        max_text_len: int = MAX_TEXT_LEN,
+        extract_lm: bool = True,
+    ):
+        self.hf_dataset  = hf_dataset
+        self.tokenizer   = tokenizer
+        self.max_frames  = max_frames
+        self.img_size    = img_size
+        self.max_text_len = max_text_len
+        self.extract_lm  = extract_lm
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        for i, record in enumerate(self.hf_dataset):
+            # Round-robin split across DataLoader workers to avoid duplicate samples
+            if worker_info is not None and i % worker_info.num_workers != worker_info.id:
+                continue
+            try:
+                yield _process_record(
+                    record, self.tokenizer,
+                    self.max_frames, self.img_size, self.max_text_len, self.extract_lm,
+                )
+            except Exception as e:
+                logger.warning(f"Skipping record {i}: {e}")
 
 
 def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:

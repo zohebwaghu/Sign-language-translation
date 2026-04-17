@@ -168,8 +168,7 @@ class SignTokenizer:
             return encoded
 
         lengths = [len(e) for e in encoded]
-        T = max(max(lengths), 1)
-        T = min(T, max_len)
+        T = max_len  # always pad to fixed length so collate_fn can stack tensors
 
         token_ids = torch.full((len(texts), T), PAD_ID, dtype=torch.long)
         mask = torch.zeros(len(texts), T, dtype=torch.bool)

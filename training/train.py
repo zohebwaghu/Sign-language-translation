@@ -68,13 +68,15 @@ class Trainer:
         tokenizer,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
+        test_loader: Optional[DataLoader] = None,
         use_wandb: bool = True,
         device: Optional[torch.device] = None,
     ):
-        self.model     = model
-        self.tokenizer = tokenizer
+        self.model        = model
+        self.tokenizer    = tokenizer
         self.train_loader = train_loader
         self.val_loader   = val_loader
+        self.test_loader  = test_loader
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -92,7 +94,7 @@ class Trainer:
     # ── Public entry point ────────────────────────────────────────────────
 
     def train(self):
-        """Run full two-phase training."""
+        """Run full two-phase training, then final test evaluation."""
         logger.info("=== Phase 1: backbone frozen ===")
         self.model.set_phase(1)
         self._run_phase(
@@ -109,6 +111,10 @@ class Trainer:
             lr=PHASE2_LR,
             start_epoch=PHASE1_EPOCHS,
         )
+
+        if self.test_loader is not None:
+            logger.info("=== Final Test Set Evaluation ===")
+            self.evaluate(self.test_loader, split="test")
 
     # ── Phase runner ─────────────────────────────────────────────────────
 
@@ -254,6 +260,86 @@ class Trainer:
         bleu = _quick_bleu(hypotheses, references)
         return val_loss, bleu
 
+    # ── Public evaluation (any split) ─────────────────────────────────────
+
+    def evaluate(
+        self,
+        loader: DataLoader,
+        split: str = "test",
+        beam_size: int = BEAM_SIZE,
+    ) -> tuple:
+        """
+        Full evaluation on any DataLoader: loss + BLEU-4 + ROUGE-L + METEOR.
+
+        Args:
+            loader:    DataLoader for val or test split.
+            split:     Label used in logs and WandB (e.g. 'val', 'test').
+            beam_size: Beam width for decoding (1 = greedy).
+
+        Returns:
+            (metrics_dict, hypotheses, references)
+        """
+        from evaluation.metrics import compute_all, print_results
+
+        self.model.eval()
+        criterion = nn.CrossEntropyLoss(ignore_index=PAD_ID, label_smoothing=0.0)
+        total_loss, n_batches = 0.0, 0
+        hypotheses: List[str] = []
+        references: List[str] = []
+
+        with torch.no_grad():
+            for batch in loader:
+                frames     = batch["frames"].to(self.device)
+                heatmaps   = batch["heatmaps"].to(self.device)
+                token_ids  = batch["token_ids"].to(self.device)
+                frame_mask = batch["frame_mask"].to(self.device)
+
+                tgt_input    = token_ids[:, :-1]
+                tgt_target   = token_ids[:, 1:]
+                tgt_pad_mask = (tgt_input == PAD_ID)
+
+                with autocast(enabled=USE_AMP and self.device.type == "cuda"):
+                    logits = self.model(
+                        frames, tgt_input,
+                        heatmaps=heatmaps,
+                        frame_mask=frame_mask,
+                        tgt_key_padding_mask=tgt_pad_mask,
+                    )
+                    loss = criterion(
+                        logits.reshape(-1, logits.size(-1)),
+                        tgt_target.reshape(-1),
+                    )
+
+                total_loss += loss.item()
+                n_batches  += 1
+
+                preds = self.model.translate(
+                    frames, self.tokenizer,
+                    heatmaps=heatmaps, frame_mask=frame_mask,
+                    beam_size=beam_size,
+                )
+                hypotheses.extend(preds)
+                references.extend(batch["text"])
+
+        avg_loss = total_loss / max(n_batches, 1)
+        metrics  = compute_all(hypotheses, references)
+        metrics["loss"] = avg_loss
+
+        logger.info(
+            f"[{split}] loss={avg_loss:.4f}  "
+            f"BLEU-4={metrics.get('bleu4', 0):.2f}  "
+            f"ROUGE-L={metrics.get('rougeL_f1', 0):.4f}  "
+            f"METEOR={metrics.get('meteor', 0):.4f}  "
+            f"n={len(hypotheses)}"
+        )
+
+        if self.use_wandb:
+            import wandb
+            wandb.log({f"{split}/{k}": v for k, v in metrics.items()})
+
+        print_results(metrics, n_samples=len(hypotheses))
+        return metrics, hypotheses, references
+
     # ── Checkpoint ───────────────────────────────────────────────────────
 
     def _save_checkpoint(self, epoch: int, optimizer, loss: float, tag: str = ""):
@@ -319,15 +405,17 @@ if __name__ == "__main__":
 
     from data.tokenizer import SignTokenizer
     from data.download import load_dataset_split
-    from data.dataset import How2SignDataset, collate_fn
+    from data.dataset import How2SignDataset, How2SignIterDataset, collate_fn
     from models.translator import SignLanguageTranslator
 
     logger.info("Loading tokenizer...")
     tokenizer = SignTokenizer()
     if not CHECKPOINT_DIR.parent.joinpath("data/tokenizer.model").exists():
-        logger.info("Training tokenizer on dataset...")
+        logger.info("Training tokenizer on dataset (streaming 2k sentences)...")
         ds = load_dataset_split("train", streaming=True)
-        texts = [ex["translation"] for ex in ds.take(50_000)]
+        def _get_text(ex):
+            return (ex.get("json") or {}).get("SENTENCE") or ex.get("translation") or ex.get("sentence") or ""
+        texts = [t for ex in ds.take(2_000) if (t := _get_text(ex))]
         tokenizer.train(texts)
     else:
         from training.config import TOKENIZER_MODEL
@@ -338,30 +426,49 @@ if __name__ == "__main__":
     params = model.count_parameters()
     logger.info(f"  Parameters: {params}")
 
-    logger.info("Loading dataset...")
-    train_split = load_dataset_split("train", streaming=False)
-    val_split   = load_dataset_split("val",   streaming=False)
+    from training.config import MICRO_BATCH_SIZE, NUM_WORKERS
 
     if args.overfit_test:
-        train_split = list(train_split)[:100]
-        val_split   = list(val_split)[:20]
+        # Small in-memory lists for quick sanity check
+        logger.info("Overfit test: streaming 100/20/20 samples into memory...")
+        def _take_list(split, n):
+            return list(load_dataset_split(split, streaming=True).take(n))
+        train_split = _take_list("train", 100)
+        val_split   = _take_list("val",   20)
+        test_split  = _take_list("test",  20)
+        logger.info(f"  train={len(train_split)}  val={len(val_split)}  test={len(test_split)}")
+        train_ds = How2SignDataset(train_split, tokenizer)
+        val_ds   = How2SignDataset(val_split,   tokenizer)
+        test_ds  = How2SignDataset(test_split,  tokenizer)
+        _shuffle = True
+    else:
+        # Full run: streaming IterableDataset — video bytes never all in RAM
+        logger.info("Full run: streaming How2Sign (train / val / test)...")
+        train_ds = How2SignIterDataset(load_dataset_split("train", streaming=True).shuffle(seed=42, buffer_size=1000), tokenizer)
+        val_ds   = How2SignIterDataset(load_dataset_split("val",   streaming=True), tokenizer)
+        test_ds  = How2SignIterDataset(load_dataset_split("test",  streaming=True), tokenizer)
+        _shuffle = False  # IterableDataset handles its own shuffle
 
-    train_ds = How2SignDataset(list(train_split), tokenizer)
-    val_ds   = How2SignDataset(list(val_split),   tokenizer)
-
-    from training.config import MICRO_BATCH_SIZE, NUM_WORKERS
     train_loader = DataLoader(
-        train_ds, batch_size=MICRO_BATCH_SIZE, shuffle=True,
+        train_ds, batch_size=MICRO_BATCH_SIZE, shuffle=_shuffle,
         collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
     )
     val_loader = DataLoader(
         val_ds, batch_size=MICRO_BATCH_SIZE * 2, shuffle=False,
         collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
     )
+    test_loader = DataLoader(
+        test_ds, batch_size=MICRO_BATCH_SIZE * 2, shuffle=False,
+        collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
+    )
 
-    trainer = Trainer(model, tokenizer, train_loader, val_loader, use_wandb=not args.no_wandb)
+    trainer = Trainer(
+        model, tokenizer,
+        train_loader, val_loader, test_loader,
+        use_wandb=not args.no_wandb,
+    )
 
     if args.resume:
         trainer.load_checkpoint(args.resume)
 
-    trainer.train()
+    trainer.train()   # trains phases 1+2, then auto-evaluates on test split

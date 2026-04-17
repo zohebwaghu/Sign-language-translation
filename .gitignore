@@ -23,7 +23,8 @@ checkpoints/*.pt
 checkpoints/*.pth
 checkpoints/*.bin
 data/cache/
-data/tokenizer.model
+data/tokenizer*.model
+data/tokenizer*.vocab
 *.pkl
 
 # Secrets
