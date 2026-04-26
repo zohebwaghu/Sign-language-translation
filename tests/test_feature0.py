@@ -1,12 +1,12 @@
 """
-F0 Gate Checks — Data Pipeline
+F0 Gate Checks -- Data Pipeline
 Runs entirely on CPU with synthetic data. No HuggingFace download required.
 
 Gate checks:
-  0.1  extract_frames() → (T, 3, 256, 256) + bool mask
-  0.2  extract_landmarks() → (75, 2) values in [0, 1]
+  0.1  extract_frames() -> (T, 3, 256, 256) + bool mask
+  0.2  extract_landmarks() -> (75, 2) values in [0, 1]
   0.3  Heatmap concentrates on hand/face regions
-  0.4  Missing hand detection → zeros, no crash
+  0.4  Missing hand detection -> zeros, no crash
   0.5  Padding mask: True for real frames, False for padded
   0.6  Dataset __len__ and __getitem__ work with DataLoader
 """
@@ -29,7 +29,7 @@ from data.landmarks import extract_landmarks, create_landmark_heatmap
 from data.dataset import How2SignDataset, collate_fn
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# ??? Helpers ?????????????????????????????????????????????????????????????????
 
 def _make_fake_video_bytes(n_frames: int = 10) -> bytes:
     """Create a minimal synthetic MP4 in memory using PyAV."""
@@ -52,7 +52,7 @@ def _make_fake_video_bytes(n_frames: int = 10) -> bytes:
         container.close()
         return buf.getvalue()
     except Exception:
-        return b""  # empty → extract_frames will gracefully return zeros
+        return b""  # empty -> extract_frames will gracefully return zeros
 
 
 def _make_fake_rgb_frame(h: int = 256, w: int = 256) -> np.ndarray:
@@ -82,10 +82,10 @@ def _make_fake_records(n: int = 4) -> list:
     ]
 
 
-# ─── Gate Checks ─────────────────────────────────────────────────────────────
+# ??? Gate Checks ?????????????????????????????????????????????????????????????
 
 def test_0_1_extract_frames_shape():
-    """0.1 — extract_frames() returns (T, 3, 256, 256) + bool mask."""
+    """0.1 -- extract_frames() returns (T, 3, 256, 256) + bool mask."""
     video_bytes = _make_fake_video_bytes(n_frames=20)
     frames, mask = extract_frames(video_bytes, max_frames=MAX_FRAMES, img_size=IMG_SIZE)
 
@@ -98,7 +98,7 @@ def test_0_1_extract_frames_shape():
 
 
 def test_0_2_landmarks_range():
-    """0.2 — extract_landmarks() returns (75, 2) with values in [0, 1]."""
+    """0.2 -- extract_landmarks() returns (75, 2) with values in [0, 1]."""
     frame = _make_fake_rgb_frame()
     lm = extract_landmarks(frame)
 
@@ -111,7 +111,7 @@ def test_0_2_landmarks_range():
 
 
 def test_0_3_heatmap_concentration():
-    """0.3 — heatmap values are non-trivially distributed (not all zeros)."""
+    """0.3 -- heatmap values are non-trivially distributed (not all zeros)."""
     # Place a landmark in the centre
     lm = np.zeros((N_LANDMARKS, 2), dtype=np.float32)
     lm[33] = [0.5, 0.5]   # left wrist in the middle
@@ -120,14 +120,14 @@ def test_0_3_heatmap_concentration():
     hm = create_landmark_heatmap(lm, img_size=IMG_SIZE)
 
     assert hm.shape == (IMG_SIZE, IMG_SIZE), f"Heatmap shape wrong: {hm.shape}"
-    assert hm.max() > 0.0, "Heatmap is all zeros — landmark blobs not rendered"
+    assert hm.max() > 0.0, "Heatmap is all zeros -- landmark blobs not rendered"
     assert hm.min() >= 0.0 and hm.max() <= 1.0, "Heatmap out of [0,1]"
 
     # Check that the peak is near EITHER placed landmark (both have equal weight)
     peak_y, peak_x = np.unravel_index(np.argmax(hm), hm.shape)
     expected = [
         (int(0.5 * (IMG_SIZE - 1)), int(0.5 * (IMG_SIZE - 1))),  # lm[33]: x=0.5,y=0.5
-        (int(0.3 * (IMG_SIZE - 1)), int(0.7 * (IMG_SIZE - 1))),  # lm[54]: x=0.7,y=0.3 → cx=178,cy=76
+        (int(0.3 * (IMG_SIZE - 1)), int(0.7 * (IMG_SIZE - 1))),  # lm[54]: x=0.7,y=0.3 -> cx=178,cy=76
     ]
     dists = [np.sqrt((peak_x - cx)**2 + (peak_y - cy)**2) for cy, cx in expected]
     assert min(dists) < 30, (
@@ -137,19 +137,19 @@ def test_0_3_heatmap_concentration():
 
 
 def test_0_4_missing_landmark_no_crash():
-    """0.4 — Missing hand detection → zeros, no crash."""
-    # Pass a blank (all-black) frame — MediaPipe won't detect anything
+    """0.4 -- Missing hand detection -> zeros, no crash."""
+    # Pass a blank (all-black) frame -- MediaPipe won't detect anything
     blank = np.zeros((256, 256, 3), dtype=np.uint8)
     lm = extract_landmarks(blank)
 
     assert lm.shape == (N_LANDMARKS, 2), f"Shape wrong on blank frame: {lm.shape}"
     # All should be zero (or very close to zero) since no detection
     assert lm.min() >= 0.0 and lm.max() <= 1.0, "Values out of range on blank frame"
-    print(f"  [PASS] 0.4  blank frame → landmarks shape {lm.shape}, no crash")
+    print(f"  [PASS] 0.4  blank frame -> landmarks shape {lm.shape}, no crash")
 
 
 def test_0_5_padding_mask():
-    """0.5 — Real frames have mask=True, padded positions have mask=False."""
+    """0.5 -- Real frames have mask=True, padded positions have mask=False."""
     # Use a very short video (few frames) so padding kicks in
     video_bytes = _make_fake_video_bytes(n_frames=5)
     frames, mask = extract_frames(video_bytes, max_frames=MAX_FRAMES, img_size=IMG_SIZE)
@@ -170,7 +170,7 @@ def test_0_5_padding_mask():
 
 
 def test_0_6_dataset_dataloader():
-    """0.6 — Dataset __len__ and __getitem__ work with DataLoader."""
+    """0.6 -- Dataset __len__ and __getitem__ work with DataLoader."""
     records = _make_fake_records(n=4)
     tokenizer = _make_fake_tokenizer()
 
@@ -202,7 +202,7 @@ def test_0_6_dataset_dataloader():
     print(f"  [PASS] 0.6  Dataset len={len(ds)}  DataLoader batch frames={batch['frames'].shape}")
 
 
-# ─── Runner ──────────────────────────────────────────────────────────────────
+# ??? Runner ??????????????????????????????????????????????????????????????????
 
 if __name__ == "__main__":
     tests = [
@@ -231,4 +231,4 @@ if __name__ == "__main__":
         print(f"  FAILED: {failed}/{len(tests)}")
         sys.exit(1)
     else:
-        print("  ALL F0 GATE CHECKS PASSED ✓")
+        print("  ALL F0 GATE CHECKS PASSED OK")

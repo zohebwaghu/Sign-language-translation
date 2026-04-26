@@ -1,12 +1,12 @@
 """
-F5 Gate Checks — Evaluation + LLM-as-Judge
+F5 Gate Checks -- Evaluation + LLM-as-Judge
 Tests run on CPU with synthetic data. LLM judge test mocked to avoid API calls.
 
 Gate checks:
   5.1  BLEU-4 computed and returns a float
   5.2  ROUGE-L computed and returns a float
   5.3  METEOR computed and returns a float
-  5.4  LLM judge returns correct structure (mocked — no API call)
+  5.4  LLM judge returns correct structure (mocked -- no API call)
   5.5  Pearson correlation computed between judge scores and BLEU
   5.6  print_examples runs without error
   5.7  Ablation function returns 3 configs with metrics
@@ -26,7 +26,7 @@ from evaluation.llm_judge import (
 )
 
 
-# ── Shared test data ─────────────────────────────────────────────────────────
+# ?? Shared test data ?????????????????????????????????????????????????????????
 
 HYP = [
     "the man is signing hello",
@@ -44,10 +44,10 @@ REF = [
 ]
 
 
-# ── Gate Checks ──────────────────────────────────────────────────────────────
+# ?? Gate Checks ??????????????????????????????????????????????????????????????
 
 def test_5_1_bleu():
-    """5.1 — BLEU-4 computed on sample data."""
+    """5.1 -- BLEU-4 computed on sample data."""
     result = compute_bleu(HYP, REF)
     assert "bleu4" in result, f"bleu4 key missing: {result}"
     assert isinstance(result["bleu4"], float), f"bleu4 not float: {type(result['bleu4'])}"
@@ -56,7 +56,7 @@ def test_5_1_bleu():
 
 
 def test_5_2_rouge():
-    """5.2 — ROUGE-L computed and returns a float."""
+    """5.2 -- ROUGE-L computed and returns a float."""
     result = compute_rouge(HYP, REF)
     assert "rougeL_f1" in result, f"rougeL_f1 missing: {result}"
     assert 0.0 <= result["rougeL_f1"] <= 1.0, f"ROUGE out of [0,1]: {result['rougeL_f1']}"
@@ -64,7 +64,7 @@ def test_5_2_rouge():
 
 
 def test_5_3_meteor():
-    """5.3 — METEOR computed and returns a float."""
+    """5.3 -- METEOR computed and returns a float."""
     result = compute_meteor(HYP, REF)
     assert "meteor" in result, f"meteor missing: {result}"
     assert 0.0 <= result["meteor"] <= 1.0, f"METEOR out of [0,1]: {result['meteor']}"
@@ -72,7 +72,7 @@ def test_5_3_meteor():
 
 
 def test_5_4_llm_judge_structure():
-    """5.4 — LLM judge returns correct JudgeScore structure (mocked API)."""
+    """5.4 -- LLM judge returns correct JudgeScore structure (mocked API)."""
     import json
     import anthropic
 
@@ -96,7 +96,7 @@ def test_5_4_llm_judge_structure():
 
 
 def test_5_5_pearson_correlation():
-    """5.5 — Pearson correlation between LLM scores and BLEU."""
+    """5.5 -- Pearson correlation between LLM scores and BLEU."""
     scores = [
         JudgeScore(HYP[i], REF[i], adequacy=float(3+i%3), fluency=float(3+i%2),
                    meaning=float(3+i%3), composite=float(3+i%3))
@@ -109,7 +109,7 @@ def test_5_5_pearson_correlation():
 
 
 def test_5_6_print_examples():
-    """5.6 — print_examples runs without error."""
+    """5.6 -- print_examples runs without error."""
     scores = [
         JudgeScore(HYP[i], REF[i], 4.0, 4.0, 3.0, 3.67)
         for i in range(len(HYP))
@@ -119,7 +119,7 @@ def test_5_6_print_examples():
 
 
 def test_5_7_ablation_structure():
-    """5.7 — Ablation returns 3 configs each with BLEU, ROUGE, METEOR."""
+    """5.7 -- Ablation returns 3 configs each with BLEU, ROUGE, METEOR."""
     import torch
     from models.translator import SignLanguageTranslator
     from torch.utils.data import DataLoader, TensorDataset
@@ -182,7 +182,7 @@ def test_5_7_ablation_structure():
     print(f"  [PASS] 5.7  ablation returned {len(results)} configs with all metrics")
 
 
-# ─── Runner ──────────────────────────────────────────────────────────────────
+# ??? Runner ??????????????????????????????????????????????????????????????????
 
 if __name__ == "__main__":
     tests = [
@@ -213,4 +213,4 @@ if __name__ == "__main__":
         print(f"  FAILED: {failed}/{len(tests)}")
         sys.exit(1)
     else:
-        print("  ALL F5 GATE CHECKS PASSED ✓")
+        print("  ALL F5 GATE CHECKS PASSED OK")

@@ -1,14 +1,14 @@
 """
-F1 — Visual Encoder: ResNet-18 backbone + Landmark-Aware Spatial Attention.
+F1 -- Visual Encoder: ResNet-18 backbone + Landmark-Aware Spatial Attention.
 
 Pipeline per frame:
   (3, 256, 256)
-      → ResNet-18 (frozen phase 1, unfrozen phase 2) → (512, 8, 8) feature maps
-      → SpatialAttention (concat heatmap → Conv → Sigmoid → element-wise ×)
-      → AdaptiveAvgPool2d(1)  → (512,)
-      → Linear projection     → (d_model,)
+      -> ResNet-18 (frozen phase 1, unfrozen phase 2) -> (512, 8, 8) feature maps
+      -> SpatialAttention (concat heatmap -> Conv -> Sigmoid -> element-wise ?)
+      -> AdaptiveAvgPool2d(1)  -> (512,)
+      -> Linear projection     -> (d_model,)
 
-Batch processing: reshape (B, T, 3, H, W) → (B*T, 3, H, W) → backbone → reshape back.
+Batch processing: reshape (B, T, 3, H, W) -> (B*T, 3, H, W) -> backbone -> reshape back.
 """
 
 import torch
@@ -26,15 +26,15 @@ class SpatialAttention(nn.Module):
     """
     Fuse CNN feature maps with a landmark heatmap via learned attention.
 
-    The heatmap acts as a spatial prior — it tells the model where hands
+    The heatmap acts as a spatial prior -- it tells the model where hands
     and face are, so the network learns to weight those regions more.
 
     Architecture:
         [C+1, H, W]  (cat of CNN features + heatmap)
-            → Conv(kernel=1) → BN → ReLU
-            → Conv(kernel=1) → Sigmoid
+            -> Conv(kernel=1) -> BN -> ReLU
+            -> Conv(kernel=1) -> Sigmoid
         = attention map [1, H, W]
-        → element-wise multiply with original CNN features
+        -> element-wise multiply with original CNN features
     """
 
     def __init__(self, in_channels: int = 512):
@@ -87,7 +87,7 @@ class VisualEncoder(nn.Module):
         dropout:   Dropout rate on the projected output.
     """
 
-    # ResNet-18 outputs 512 feature channels at stride 32 for 256×256 input
+    # ResNet-18 outputs 512 feature channels at stride 32 for 256?256 input
     _BACKBONE_CHANNELS = 512
 
     def __init__(
@@ -98,7 +98,7 @@ class VisualEncoder(nn.Module):
     ):
         super().__init__()
 
-        # ── Backbone: ResNet-18 without avgpool and FC ────────────────────
+        # ?? Backbone: ResNet-18 without avgpool and FC ????????????????????
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         # Keep everything up to (but not including) the avgpool layer
         self.backbone = nn.Sequential(*list(resnet.children())[:-2])
@@ -106,10 +106,10 @@ class VisualEncoder(nn.Module):
         if freeze_backbone:
             self.freeze_backbone()
 
-        # ── Spatial Attention ────────────────────────────────────────────
+        # ?? Spatial Attention ????????????????????????????????????????????
         self.spatial_attention = SpatialAttention(self._BACKBONE_CHANNELS)
 
-        # ── Projection head ──────────────────────────────────────────────
+        # ?? Projection head ??????????????????????????????????????????????
         self.pool      = nn.AdaptiveAvgPool2d(1)
         self.dropout   = nn.Dropout(dropout)
         self.proj      = nn.Linear(self._BACKBONE_CHANNELS, d_model)
@@ -137,7 +137,7 @@ class VisualEncoder(nn.Module):
         """
         B, T, C, H, W = frames.shape
 
-        # Flatten batch × time for parallel processing through backbone
+        # Flatten batch ? time for parallel processing through backbone
         x = frames.view(B * T, C, H, W)         # (B*T, 3, H, W)
         feat = self.backbone(x)                  # (B*T, 512, fH, fW)
 

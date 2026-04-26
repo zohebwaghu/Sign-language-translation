@@ -21,7 +21,7 @@ try:
     _SP_AVAILABLE = True
 except ImportError:
     _SP_AVAILABLE = False
-    logger.warning("sentencepiece not installed — tokenizer will raise on train/encode")
+    logger.warning("sentencepiece not installed -- tokenizer will raise on train/encode")
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -42,7 +42,7 @@ class SignTokenizer:
         if model_path is not None:
             self.load(model_path)
 
-    # ─── Build / Save / Load ─────────────────────────────────────────────────
+    # ??? Build / Save / Load ?????????????????????????????????????????????????
 
     def train(
         self,
@@ -59,13 +59,13 @@ class SignTokenizer:
             vocab_size: Subword vocabulary size.
         """
         if not _SP_AVAILABLE:
-            raise ImportError("sentencepiece is required — pip install sentencepiece")
+            raise ImportError("sentencepiece is required -- pip install sentencepiece")
 
         model_path = Path(model_path)
         model_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write corpus to a temp file
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
             f.write("\n".join(texts))
             corpus_file = f.name
 
@@ -92,7 +92,7 @@ class SignTokenizer:
 
         os.unlink(corpus_file)
         self.load(model_path)
-        logger.info(f"Tokenizer trained → {model_path}  (vocab={self.vocab_size})")
+        logger.info(f"Tokenizer trained -> {model_path}  (vocab={self.vocab_size})")
 
     def save(self, path: Union[str, Path]) -> None:
         path = Path(path)
@@ -105,12 +105,12 @@ class SignTokenizer:
 
     def load(self, path: Union[str, Path]) -> None:
         if not _SP_AVAILABLE:
-            raise ImportError("sentencepiece is required — pip install sentencepiece")
+            raise ImportError("sentencepiece is required -- pip install sentencepiece")
         self._sp = spm.SentencePieceProcessor()
         self._sp.load(str(path))
         logger.info(f"Tokenizer loaded from {path}  (vocab={self.vocab_size})")
 
-    # ─── Encoding / Decoding ─────────────────────────────────────────────────
+    # ??? Encoding / Decoding ?????????????????????????????????????????????????
 
     def encode(
         self,
@@ -160,7 +160,7 @@ class SignTokenizer:
 
         Returns:
             token_ids: (B, max_len) torch.LongTensor
-            mask:      (B, max_len) bool tensor — True for real tokens
+            mask:      (B, max_len) bool tensor -- True for real tokens
         """
         import torch
         encoded = [self.encode(t, add_bos=True, add_eos=True, max_len=max_len) for t in texts]
@@ -168,7 +168,7 @@ class SignTokenizer:
             return encoded
 
         lengths = [len(e) for e in encoded]
-        T = max_len  # always pad to fixed length so collate_fn can stack tensors
+        T = max_len  # always pad to fixed max_len so tensors stack correctly
 
         token_ids = torch.full((len(texts), T), PAD_ID, dtype=torch.long)
         mask = torch.zeros(len(texts), T, dtype=torch.bool)
@@ -180,7 +180,7 @@ class SignTokenizer:
 
         return token_ids, mask
 
-    # ─── Properties ──────────────────────────────────────────────────────────
+    # ??? Properties ??????????????????????????????????????????????????????????
 
     @property
     def vocab_size(self) -> int:

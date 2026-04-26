@@ -1,10 +1,10 @@
 """
-F4 — Training loop for SignLanguageTranslator.
+F4 -- Training loop for SignLanguageTranslator.
 
 Features:
   - CrossEntropyLoss with ignore_index=PAD + label_smoothing=0.1
   - AdamW optimizer (lr=3e-4, weight_decay=0.01)
-  - Gradient accumulation (effective batch = MICRO_BATCH × GRAD_ACCUM_STEPS = 32)
+  - Gradient accumulation (effective batch = MICRO_BATCH ? GRAD_ACCUM_STEPS = 32)
   - Gradient clipping (max_norm=1.0)
   - CosineAnnealingLR scheduler
   - Mixed precision (fp16 AMP) via torch.cuda.amp
@@ -12,6 +12,10 @@ Features:
   - Two-phase training: Phase 1 frozen backbone (15 ep), Phase 2 unfrozen (15 ep)
   - Checkpoint every 5 epochs + best model
 """
+
+# av must be imported before torch on Windows to establish correct FFmpeg DLL
+# load order; reversing this causes a segfault when datasets streams video.
+import av  # noqa: F401
 
 import os
 import logging
@@ -38,7 +42,7 @@ from training.config import (
 logger = logging.getLogger(__name__)
 
 
-# ─── BLEU utility (inline, no sacrebleu dependency at import time) ──────────
+# ??? BLEU utility (inline, no sacrebleu dependency at import time) ??????????
 
 def _quick_bleu(hypotheses: List[str], references: List[str]) -> float:
     """Fast corpus BLEU-4 using sacrebleu (returns 0 if not available)."""
@@ -51,7 +55,7 @@ def _quick_bleu(hypotheses: List[str], references: List[str]) -> float:
         return 0.0
 
 
-# ─── Trainer ────────────────────────────────────────────────────────────────
+# ??? Trainer ????????????????????????????????????????????????????????????????
 
 class Trainer:
     """
@@ -68,33 +72,31 @@ class Trainer:
         tokenizer,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
-        test_loader: Optional[DataLoader] = None,
         use_wandb: bool = True,
         device: Optional[torch.device] = None,
     ):
-        self.model        = model
-        self.tokenizer    = tokenizer
+        self.model     = model
+        self.tokenizer = tokenizer
         self.train_loader = train_loader
         self.val_loader   = val_loader
-        self.test_loader  = test_loader
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-        # ── WandB ─────────────────────────────────────────────────────────
+        # ?? WandB ?????????????????????????????????????????????????????????
         self.use_wandb = use_wandb and _try_wandb_init()
 
-        # ── Scaler for AMP ────────────────────────────────────────────────
+        # ?? Scaler for AMP ????????????????????????????????????????????????
         self.scaler = GradScaler(enabled=USE_AMP and self.device.type == "cuda")
 
-        # ── Checkpointing ─────────────────────────────────────────────────
+        # ?? Checkpointing ?????????????????????????????????????????????????
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
         self.best_bleu = 0.0
         self.global_step = 0
 
-    # ── Public entry point ────────────────────────────────────────────────
+    # ?? Public entry point ????????????????????????????????????????????????
 
     def train(self):
-        """Run full two-phase training, then final test evaluation."""
+        """Run full two-phase training."""
         logger.info("=== Phase 1: backbone frozen ===")
         self.model.set_phase(1)
         self._run_phase(
@@ -112,11 +114,7 @@ class Trainer:
             start_epoch=PHASE1_EPOCHS,
         )
 
-        if self.test_loader is not None:
-            logger.info("=== Final Test Set Evaluation ===")
-            self.evaluate(self.test_loader, split="test")
-
-    # ── Phase runner ─────────────────────────────────────────────────────
+    # ?? Phase runner ?????????????????????????????????????????????????????
 
     def _run_phase(self, phase: int, n_epochs: int, lr: float, start_epoch: int = 0):
         optimizer = AdamW(
@@ -163,7 +161,7 @@ class Trainer:
                 self._save_checkpoint(epoch, optimizer, train_loss, tag="best")
                 logger.info(f"  New best BLEU: {bleu:.2f}")
 
-    # ── Single train epoch ────────────────────────────────────────────────
+    # ?? Single train epoch ????????????????????????????????????????????????
 
     def _train_epoch(self, epoch: int, optimizer, criterion) -> float:
         self.model.train()
@@ -216,7 +214,7 @@ class Trainer:
 
         return total_loss / max(n_batches, 1)
 
-    # ── Validation epoch ──────────────────────────────────────────────────
+    # ?? Validation epoch ??????????????????????????????????????????????????
 
     def _val_epoch(self, epoch: int):
         self.model.eval()
@@ -260,87 +258,7 @@ class Trainer:
         bleu = _quick_bleu(hypotheses, references)
         return val_loss, bleu
 
-    # ── Public evaluation (any split) ─────────────────────────────────────
-
-    def evaluate(
-        self,
-        loader: DataLoader,
-        split: str = "test",
-        beam_size: int = BEAM_SIZE,
-    ) -> tuple:
-        """
-        Full evaluation on any DataLoader: loss + BLEU-4 + ROUGE-L + METEOR.
-
-        Args:
-            loader:    DataLoader for val or test split.
-            split:     Label used in logs and WandB (e.g. 'val', 'test').
-            beam_size: Beam width for decoding (1 = greedy).
-
-        Returns:
-            (metrics_dict, hypotheses, references)
-        """
-        from evaluation.metrics import compute_all, print_results
-
-        self.model.eval()
-        criterion = nn.CrossEntropyLoss(ignore_index=PAD_ID, label_smoothing=0.0)
-        total_loss, n_batches = 0.0, 0
-        hypotheses: List[str] = []
-        references: List[str] = []
-
-        with torch.no_grad():
-            for batch in loader:
-                frames     = batch["frames"].to(self.device)
-                heatmaps   = batch["heatmaps"].to(self.device)
-                token_ids  = batch["token_ids"].to(self.device)
-                frame_mask = batch["frame_mask"].to(self.device)
-
-                tgt_input    = token_ids[:, :-1]
-                tgt_target   = token_ids[:, 1:]
-                tgt_pad_mask = (tgt_input == PAD_ID)
-
-                with autocast(enabled=USE_AMP and self.device.type == "cuda"):
-                    logits = self.model(
-                        frames, tgt_input,
-                        heatmaps=heatmaps,
-                        frame_mask=frame_mask,
-                        tgt_key_padding_mask=tgt_pad_mask,
-                    )
-                    loss = criterion(
-                        logits.reshape(-1, logits.size(-1)),
-                        tgt_target.reshape(-1),
-                    )
-
-                total_loss += loss.item()
-                n_batches  += 1
-
-                preds = self.model.translate(
-                    frames, self.tokenizer,
-                    heatmaps=heatmaps, frame_mask=frame_mask,
-                    beam_size=beam_size,
-                )
-                hypotheses.extend(preds)
-                references.extend(batch["text"])
-
-        avg_loss = total_loss / max(n_batches, 1)
-        metrics  = compute_all(hypotheses, references)
-        metrics["loss"] = avg_loss
-
-        logger.info(
-            f"[{split}] loss={avg_loss:.4f}  "
-            f"BLEU-4={metrics.get('bleu4', 0):.2f}  "
-            f"ROUGE-L={metrics.get('rougeL_f1', 0):.4f}  "
-            f"METEOR={metrics.get('meteor', 0):.4f}  "
-            f"n={len(hypotheses)}"
-        )
-
-        if self.use_wandb:
-            import wandb
-            wandb.log({f"{split}/{k}": v for k, v in metrics.items()})
-
-        print_results(metrics, n_samples=len(hypotheses))
-        return metrics, hypotheses, references
-
-    # ── Checkpoint ───────────────────────────────────────────────────────
+    # ?? Checkpoint ???????????????????????????????????????????????????????
 
     def _save_checkpoint(self, epoch: int, optimizer, loss: float, tag: str = ""):
         path = CHECKPOINT_DIR / f"checkpoint_{tag}.pt"
@@ -351,7 +269,7 @@ class Trainer:
             "loss": loss,
             "best_bleu": self.best_bleu,
         }, path)
-        logger.info(f"  Saved checkpoint → {path}")
+        logger.info(f"  Saved checkpoint -> {path}")
 
     def load_checkpoint(self, path: str | Path, optimizer=None):
         ckpt = torch.load(path, map_location=self.device)
@@ -363,7 +281,7 @@ class Trainer:
         return ckpt["epoch"]
 
 
-# ─── WandB helper ────────────────────────────────────────────────────────────
+# ??? WandB helper ????????????????????????????????????????????????????????????
 
 def _try_wandb_init() -> bool:
     """Initialise WandB. Returns False if unavailable or no API key."""
@@ -387,7 +305,7 @@ def _try_wandb_init() -> bool:
         return False
 
 
-# ─── CLI entry point ─────────────────────────────────────────────────────────
+# ??? CLI entry point ?????????????????????????????????????????????????????????
 
 if __name__ == "__main__":
     import argparse
@@ -401,21 +319,26 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, default=None, help="Checkpoint path to resume from")
     parser.add_argument("--overfit-test", action="store_true",
                         help="Quick overfit test on 100 samples (sanity check)")
+    parser.add_argument("--no-landmarks", action="store_true",
+                        help="Skip MediaPipe landmark extraction (much faster; "
+                             "spatial attention uses zero heatmaps)")
     args = parser.parse_args()
+    # Landmark extraction runs MediaPipe on every frame at load time -- too slow
+    # for on-the-fly streaming.  Default to off; enable with a preprocess step.
+    extract_lm = not args.no_landmarks
 
     from data.tokenizer import SignTokenizer
     from data.download import load_dataset_split
-    from data.dataset import How2SignDataset, How2SignIterDataset, collate_fn
+    from data.dataset import How2SignDataset, How2SignStreamingDataset, collate_fn
     from models.translator import SignLanguageTranslator
 
     logger.info("Loading tokenizer...")
     tokenizer = SignTokenizer()
-    if not CHECKPOINT_DIR.parent.joinpath("data/tokenizer.model").exists():
-        logger.info("Training tokenizer on dataset (streaming 2k sentences)...")
-        ds = load_dataset_split("train", streaming=True)
-        def _get_text(ex):
-            return (ex.get("json") or {}).get("SENTENCE") or ex.get("translation") or ex.get("sentence") or ""
-        texts = [t for ex in ds.take(2_000) if (t := _get_text(ex))]
+    tok_model_path = CHECKPOINT_DIR.parent / "data" / "tokenizer.model"
+    if not tok_model_path.exists():
+        logger.info("Training tokenizer on 3,000 streaming samples...")
+        ds_tok = load_dataset_split("train", streaming=True)
+        texts = [ex["translation"] for ex in ds_tok.take(3_000)]
         tokenizer.train(texts)
     else:
         from training.config import TOKENIZER_MODEL
@@ -426,49 +349,39 @@ if __name__ == "__main__":
     params = model.count_parameters()
     logger.info(f"  Parameters: {params}")
 
-    from training.config import MICRO_BATCH_SIZE, NUM_WORKERS
-
+    logger.info("Loading dataset...")
     if args.overfit_test:
-        # Small in-memory lists for quick sanity check
-        logger.info("Overfit test: streaming 100/20/20 samples into memory...")
-        def _take_list(split, n):
-            return list(load_dataset_split(split, streaming=True).take(n))
-        train_split = _take_list("train", 100)
-        val_split   = _take_list("val",   20)
-        test_split  = _take_list("test",  20)
-        logger.info(f"  train={len(train_split)}  val={len(val_split)}  test={len(test_split)}")
-        train_ds = How2SignDataset(train_split, tokenizer)
-        val_ds   = How2SignDataset(val_split,   tokenizer)
-        test_ds  = How2SignDataset(test_split,  tokenizer)
-        _shuffle = True
+        # Stream just the first N clips -- no full dataset download needed.
+        train_records = list(load_dataset_split("train", streaming=True).take(100))
+        val_records   = list(load_dataset_split("val",   streaming=True).take(20))
+        train_ds = How2SignDataset(train_records, tokenizer, extract_lm=extract_lm)
+        val_ds   = How2SignDataset(val_records,   tokenizer, extract_lm=extract_lm)
     else:
-        # Full run: streaming IterableDataset — video bytes never all in RAM
-        logger.info("Full run: streaming How2Sign (train / val / test)...")
-        train_ds = How2SignIterDataset(load_dataset_split("train", streaming=True).shuffle(seed=42, buffer_size=1000), tokenizer)
-        val_ds   = How2SignIterDataset(load_dataset_split("val",   streaming=True), tokenizer)
-        test_ds  = How2SignIterDataset(load_dataset_split("test",  streaming=True), tokenizer)
-        _shuffle = False  # IterableDataset handles its own shuffle
+        # Full training: stream lazily to avoid loading 75 GB of video bytes into RAM.
+        # Validation split (~1.7 K clips) is small enough to materialise.
+        train_hf = load_dataset_split("train", streaming=True)
+        logger.info("Materialising validation split (streaming)...")
+        val_records = list(load_dataset_split("val", streaming=True))
+        train_ds = How2SignStreamingDataset(train_hf, tokenizer, extract_lm=extract_lm)
+        val_ds   = How2SignDataset(val_records, tokenizer, extract_lm=extract_lm)
 
+    # num_workers=0: Windows spawns new processes that would re-init DLLs in
+    # wrong order (av after torch). Inline loading is simpler and safe.
+    # IterableDataset does not support DataLoader shuffle=True; buffer shuffle
+    # is handled inside How2SignStreamingDataset.
+    from training.config import MICRO_BATCH_SIZE
     train_loader = DataLoader(
-        train_ds, batch_size=MICRO_BATCH_SIZE, shuffle=_shuffle,
-        collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
+        train_ds, batch_size=MICRO_BATCH_SIZE, shuffle=False,
+        collate_fn=collate_fn, num_workers=0, pin_memory=True,
     )
     val_loader = DataLoader(
         val_ds, batch_size=MICRO_BATCH_SIZE * 2, shuffle=False,
-        collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
-    )
-    test_loader = DataLoader(
-        test_ds, batch_size=MICRO_BATCH_SIZE * 2, shuffle=False,
-        collate_fn=collate_fn, num_workers=NUM_WORKERS, pin_memory=True,
+        collate_fn=collate_fn, num_workers=0, pin_memory=True,
     )
 
-    trainer = Trainer(
-        model, tokenizer,
-        train_loader, val_loader, test_loader,
-        use_wandb=not args.no_wandb,
-    )
+    trainer = Trainer(model, tokenizer, train_loader, val_loader, use_wandb=not args.no_wandb)
 
     if args.resume:
         trainer.load_checkpoint(args.resume)
 
-    trainer.train()   # trains phases 1+2, then auto-evaluates on test split
+    trainer.train()

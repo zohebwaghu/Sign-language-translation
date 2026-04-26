@@ -1,5 +1,5 @@
 """
-F5 — Ablation experiments.
+F5 -- Ablation experiments.
 
 Runs the same evaluation with/without spatial attention to quantify
 the contribution of the landmark-aware attention mechanism.
@@ -34,7 +34,7 @@ def run_ablation(
       3. No landmarks (pass zero heatmaps)
 
     Returns:
-        Dict mapping config name → metrics dict (BLEU, ROUGE, METEOR).
+        Dict mapping config name -> metrics dict (BLEU, ROUGE, METEOR).
     """
     from evaluation.metrics import compute_all
 

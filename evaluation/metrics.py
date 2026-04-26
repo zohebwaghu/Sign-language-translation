@@ -1,10 +1,10 @@
 """
-F5 — Automatic evaluation metrics for sign language translation.
+F5 -- Automatic evaluation metrics for sign language translation.
 
 Metrics:
-  BLEU-4   — corpus-level n-gram precision (sacrebleu, smoothing method 1)
-  ROUGE-L  — longest common subsequence recall (rouge-score)
-  METEOR   — synonym-aware precision/recall (nltk)
+  BLEU-4   -- corpus-level n-gram precision (sacrebleu, smoothing method 1)
+  ROUGE-L  -- longest common subsequence recall (rouge-score)
+  METEOR   -- synonym-aware precision/recall (nltk)
 """
 
 from typing import List, Dict

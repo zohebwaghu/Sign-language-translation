@@ -36,6 +36,9 @@ data/tokenizer*.vocab
 .DS_Store
 Thumbs.db
 
+# Logs
+*.log
+
 # WandB
 wandb/
 

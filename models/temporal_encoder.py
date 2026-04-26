@@ -1,11 +1,11 @@
 """
-F2 — Temporal Transformer Encoder.
+F2 -- Temporal Transformer Encoder.
 
 Contextualises per-frame features across the temporal dimension so the
 model understands gesture dynamics rather than treating frames independently.
 
 Architecture:
-  (B, T, d_model)  → sinusoidal PE → 4-layer TransformerEncoder → LayerNorm → (B, T, d_model)
+  (B, T, d_model)  -> sinusoidal PE -> 4-layer TransformerEncoder -> LayerNorm -> (B, T, d_model)
 """
 
 import math
@@ -82,7 +82,7 @@ class TemporalEncoder(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             activation="gelu",
-            batch_first=True,   # expects (B, T, d_model) — matches our layout
+            batch_first=True,   # expects (B, T, d_model) -- matches our layout
             norm_first=False,   # post-norm (standard)
         )
         self.encoder = nn.TransformerEncoder(
@@ -99,7 +99,7 @@ class TemporalEncoder(nn.Module):
         """
         Args:
             x: (B, T, d_model)  per-frame visual features.
-            src_key_padding_mask: (B, T) bool tensor — True for PADDED positions
+            src_key_padding_mask: (B, T) bool tensor -- True for PADDED positions
                                   (torch convention: True = ignore this position).
 
         Returns:

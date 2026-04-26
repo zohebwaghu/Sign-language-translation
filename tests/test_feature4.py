@@ -1,9 +1,9 @@
 """
-F4 Gate Checks — End-to-End Model + Training
+F4 Gate Checks -- End-to-End Model + Training
 All tests run on CPU with tiny dummy data (no GPU, no real dataset).
 
 Gate checks:
-  4.1  Full forward pass: (B, T, 3, 256, 256) → (B, S, V) logits
+  4.1  Full forward pass: (B, T, 3, 256, 256) -> (B, S, V) logits
   4.2  Loss decreases over a few steps (overfit on tiny batch)
   4.3  No NaN/Inf in loss or gradients
   4.4  translate() produces a non-empty string
@@ -25,7 +25,7 @@ from training.config import D_MODEL, PAD_ID, BOS_ID, EOS_ID, LABEL_SMOOTHING, MA
 from models.translator import SignLanguageTranslator
 
 # Tiny dimensions to keep tests fast on CPU
-B, T, H, W = 2, 8, 64, 64   # smaller than real (256×256) for speed
+B, T, H, W = 2, 8, 64, 64   # smaller than real (256?256) for speed
 S = 10
 VOCAB = 50
 
@@ -41,14 +41,14 @@ def _dummy_batch(device="cpu"):
 
 
 def _make_model(freeze=True) -> SignLanguageTranslator:
-    # Override IMG_SIZE config via monkey-patch isn't needed — model accepts any H,W
+    # Override IMG_SIZE config via monkey-patch isn't needed -- model accepts any H,W
     return SignLanguageTranslator(vocab_size=VOCAB, d_model=D_MODEL, freeze_backbone=freeze)
 
 
-# ─── Gate Checks ─────────────────────────────────────────────────────────────
+# ??? Gate Checks ?????????????????????????????????????????????????????????????
 
 def test_4_1_full_forward_pass():
-    """4.1 — Full forward pass produces correct output shape."""
+    """4.1 -- Full forward pass produces correct output shape."""
     model = _make_model()
     model.eval()
     frames, heatmaps, frame_mask, token_ids = _dummy_batch()
@@ -64,7 +64,7 @@ def test_4_1_full_forward_pass():
 
 
 def test_4_2_loss_decreases():
-    """4.2 — Loss decreases when overfitting on a single batch (5 steps)."""
+    """4.2 -- Loss decreases when overfitting on a single batch (5 steps)."""
     model = _make_model(freeze=True)
     model.train()
 
@@ -85,13 +85,13 @@ def test_4_2_loss_decreases():
         losses.append(loss.item())
 
     assert losses[-1] < losses[0], (
-        f"Loss did not decrease: {losses[0]:.4f} → {losses[-1]:.4f}"
+        f"Loss did not decrease: {losses[0]:.4f} -> {losses[-1]:.4f}"
     )
-    print(f"  [PASS] 4.2  loss {losses[0]:.4f} → {losses[-1]:.4f}")
+    print(f"  [PASS] 4.2  loss {losses[0]:.4f} -> {losses[-1]:.4f}")
 
 
 def test_4_3_no_nan_inf():
-    """4.3 — No NaN/Inf in loss or gradients."""
+    """4.3 -- No NaN/Inf in loss or gradients."""
     model = _make_model()
     model.train()
 
@@ -118,7 +118,7 @@ def test_4_3_no_nan_inf():
 
 
 def test_4_4_translate_output():
-    """4.4 — translate() returns a list of strings (non-None)."""
+    """4.4 -- translate() returns a list of strings (non-None)."""
     model = _make_model()
     frames, heatmaps, frame_mask, _ = _dummy_batch()
 
@@ -134,7 +134,7 @@ def test_4_4_translate_output():
 
 
 def test_4_5_checkpoint_save_load():
-    """4.5 — Checkpoint saves and loads without error; weights are identical."""
+    """4.5 -- Checkpoint saves and loads without error; weights are identical."""
     model = _make_model()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -162,7 +162,7 @@ def test_4_5_checkpoint_save_load():
 
 
 def test_4_6_phase2_unfreeze():
-    """4.6 — Phase 2 unfreezes backbone (requires_grad propagates)."""
+    """4.6 -- Phase 2 unfreezes backbone (requires_grad propagates)."""
     model = _make_model(freeze=True)
 
     # Verify frozen
@@ -174,11 +174,11 @@ def test_4_6_phase2_unfreeze():
 
     frozen = [p for p in model.visual_encoder.backbone.parameters() if not p.requires_grad]
     assert len(frozen) == 0, f"{len(frozen)} backbone params still frozen after phase 2"
-    print("  [PASS] 4.6  phase 1 frozen → phase 2 fully unfrozen")
+    print("  [PASS] 4.6  phase 1 frozen -> phase 2 fully unfrozen")
 
 
 def test_4_7_gradient_accumulation():
-    """4.7 — Gradient accumulation: loss /= accum_steps; optimizer steps only every N steps."""
+    """4.7 -- Gradient accumulation: loss /= accum_steps; optimizer steps only every N steps."""
     model = _make_model()
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
@@ -211,10 +211,10 @@ def test_4_7_gradient_accumulation():
                          for p in model.parameters() if p.requires_grad)
     assert not still_has_grad, "Gradients not cleared after zero_grad"
 
-    print(f"  [PASS] 4.7  gradient accumulation over {ACCUM} steps, then step+zero_grad ✓")
+    print(f"  [PASS] 4.7  gradient accumulation over {ACCUM} steps, then step+zero_grad OK")
 
 
-# ─── Runner ──────────────────────────────────────────────────────────────────
+# ??? Runner ??????????????????????????????????????????????????????????????????
 
 if __name__ == "__main__":
     tests = [
@@ -245,4 +245,4 @@ if __name__ == "__main__":
         print(f"  FAILED: {failed}/{len(tests)}")
         sys.exit(1)
     else:
-        print("  ALL F4 GATE CHECKS PASSED ✓")
+        print("  ALL F4 GATE CHECKS PASSED OK")

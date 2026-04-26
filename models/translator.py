@@ -1,5 +1,5 @@
 """
-F4 — SignLanguageTranslator: full end-to-end model.
+F4 -- SignLanguageTranslator: full end-to-end model.
 
 Combines:
   F1  VisualEncoder     (ResNet-18 + SpatialAttention)
@@ -25,15 +25,15 @@ class SignLanguageTranslator(nn.Module):
     Full ASL-to-English translation model.
 
     Forward pass (training):
-        frames  → VisualEncoder → (B, T, d_model)
-        heatmaps ─────────────↗
-        ↓
-        TemporalEncoder        → (B, T, d_model) contextualised
-        ↓
-        TextDecoder (teacher-forcing) → (B, S, vocab_size) logits
+        frames  -> VisualEncoder -> (B, T, d_model)
+        heatmaps ??????????????
+        ?
+        TemporalEncoder        -> (B, T, d_model) contextualised
+        ?
+        TextDecoder (teacher-forcing) -> (B, S, vocab_size) logits
 
     Inference:
-        translate(frames, heatmaps) → List[str]
+        translate(frames, heatmaps) -> List[str]
     """
 
     def __init__(
@@ -48,13 +48,13 @@ class SignLanguageTranslator(nn.Module):
         self.text_decoder     = TextDecoder(vocab_size=vocab_size, d_model=d_model)
         self.vocab_size       = vocab_size
 
-    # ── Phase transitions ────────────────────────────────────────────────
+    # ?? Phase transitions ????????????????????????????????????????????????
 
     def set_phase(self, phase: int) -> None:
         """
         Switch between training phases.
-          phase=1 → backbone frozen   (fast, stable early training)
-          phase=2 → backbone unfrozen (fine-tune for higher BLEU)
+          phase=1 -> backbone frozen   (fast, stable early training)
+          phase=2 -> backbone unfrozen (fine-tune for higher BLEU)
         """
         if phase == 1:
             self.visual_encoder.freeze_backbone()
@@ -63,7 +63,7 @@ class SignLanguageTranslator(nn.Module):
         else:
             raise ValueError(f"phase must be 1 or 2, got {phase}")
 
-    # ── Forward ──────────────────────────────────────────────────────────
+    # ?? Forward ??????????????????????????????????????????????????????????
 
     def forward(
         self,
@@ -80,7 +80,7 @@ class SignLanguageTranslator(nn.Module):
             frames:    (B, T, 3, H, W)
             tgt:       (B, S)  target token IDs (full sequence incl. BOS/EOS)
             heatmaps:  (B, T, H, W) or None
-            frame_mask:(B, T)  bool, True = real frame — converted to padding mask
+            frame_mask:(B, T)  bool, True = real frame -- converted to padding mask
             tgt_key_padding_mask: (B, S) bool, True = PAD token
 
         Returns:
@@ -98,7 +98,7 @@ class SignLanguageTranslator(nn.Module):
         )
         return logits                                                   # (B, S, vocab_size)
 
-    # ── Inference ────────────────────────────────────────────────────────
+    # ?? Inference ????????????????????????????????????????????????????????
 
     @torch.no_grad()
     def translate(
@@ -109,6 +109,7 @@ class SignLanguageTranslator(nn.Module):
         frame_mask: Optional[torch.Tensor] = None,
         max_len: int = MAX_TEXT_LEN,
         beam_size: int = BEAM_SIZE,
+        no_repeat_ngram: int = 3,
     ):
         """
         Translate a batch of video clips to English strings.
@@ -129,7 +130,8 @@ class SignLanguageTranslator(nn.Module):
         visual_feats = self.visual_encoder(frames, heatmaps)
         memory       = self.temporal_encoder(visual_feats, enc_padding_mask)
         token_ids    = self.text_decoder.generate(
-            memory, enc_padding_mask, max_len=max_len, beam_size=beam_size
+            memory, enc_padding_mask, max_len=max_len, beam_size=beam_size,
+            no_repeat_ngram=no_repeat_ngram,
         )                                        # (B, max_len)
 
         return [

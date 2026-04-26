@@ -1,9 +1,9 @@
 """
-F2 + F3 Gate Checks — Temporal Encoder & Transformer Decoder
+F2 + F3 Gate Checks -- Temporal Encoder & Transformer Decoder
 All tests run on CPU with dummy tensors.
 
 F2 checks:
-  2.1  Input (B, T, 512) → output (B, T, 512) shape preserved
+  2.1  Input (B, T, 512) -> output (B, T, 512) shape preserved
   2.2  Positional encoding values are non-zero
   2.3  Padding mask prevents attention to padded positions
   2.4  Output changes when input order is shuffled (temporal awareness)
@@ -12,7 +12,7 @@ F3 checks:
   3.1  Decoder output shape: (B, S, vocab_size)
   3.2  Causal mask prevents attending to future tokens
   3.3  generate() produces sequences ending at EOS (or PAD after EOS)
-  3.4  Tokenizer encode→decode round-trip
+  3.4  Tokenizer encode->decode round-trip
   3.5  Cross-attention connects to encoder output
   3.6  Vocab size matches between tokenizer and decoder FC layer
 """
@@ -33,10 +33,10 @@ B, T, S = 2, 16, 12
 VOCAB = 200   # small vocab for fast CPU tests
 
 
-# ─── F2: Temporal Encoder ─────────────────────────────────────────────────────
+# ??? F2: Temporal Encoder ?????????????????????????????????????????????????????
 
 def test_2_1_temporal_output_shape():
-    """2.1 — Input (B, T, 512) → output (B, T, 512)."""
+    """2.1 -- Input (B, T, 512) -> output (B, T, 512)."""
     enc = TemporalEncoder(d_model=D_MODEL)
     enc.eval()
     x = torch.randn(B, T, D_MODEL)
@@ -47,9 +47,9 @@ def test_2_1_temporal_output_shape():
 
 
 def test_2_2_positional_encoding_nonzero():
-    """2.2 — Positional encoding values are non-zero."""
+    """2.2 -- Positional encoding values are non-zero."""
     pe = SinusoidalPositionalEncoding(d_model=D_MODEL, max_len=512, dropout=0.0)
-    # Access the buffer directly — shape (1, max_len, d_model)
+    # Access the buffer directly -- shape (1, max_len, d_model)
     assert pe.pe.abs().max().item() > 0, "Positional encoding is all zeros"
     # Also check it varies across positions
     diff = (pe.pe[:, 0, :] - pe.pe[:, 1, :]).abs().max().item()
@@ -58,7 +58,7 @@ def test_2_2_positional_encoding_nonzero():
 
 
 def test_2_3_padding_mask():
-    """2.3 — Padding mask prevents attention to padded positions."""
+    """2.3 -- Padding mask prevents attention to padded positions."""
     enc = TemporalEncoder(d_model=D_MODEL)
     enc.eval()
 
@@ -78,7 +78,7 @@ def test_2_3_padding_mask():
 
 
 def test_2_4_temporal_awareness():
-    """2.4 — Output changes when input frame order is shuffled."""
+    """2.4 -- Output changes when input frame order is shuffled."""
     enc = TemporalEncoder(d_model=D_MODEL)
     enc.eval()
 
@@ -93,14 +93,14 @@ def test_2_4_temporal_awareness():
     # The shuffled output should NOT be a permutation of the original
     # (because positional encoding changes with position)
     diff = (out_orig[:, perm, :] - out_shuffled).abs().mean().item()
-    assert diff > 1e-4, "Shuffling input had no effect — temporal encoding may be missing"
+    assert diff > 1e-4, "Shuffling input had no effect -- temporal encoding may be missing"
     print(f"  [PASS] 2.4  shuffle diff = {diff:.4f}  (temporal awareness confirmed)")
 
 
-# ─── F3: Text Decoder ─────────────────────────────────────────────────────────
+# ??? F3: Text Decoder ?????????????????????????????????????????????????????????
 
 def test_3_1_decoder_output_shape():
-    """3.1 — Decoder output shape: (B, S, vocab_size)."""
+    """3.1 -- Decoder output shape: (B, S, vocab_size)."""
     dec = TextDecoder(vocab_size=VOCAB, d_model=D_MODEL, n_layers=2)
     dec.eval()
 
@@ -115,18 +115,18 @@ def test_3_1_decoder_output_shape():
 
 
 def test_3_2_causal_mask():
-    """3.2 — Causal mask prevents attending to future tokens."""
+    """3.2 -- Causal mask prevents attending to future tokens."""
     mask = TextDecoder._causal_mask(S, device=torch.device("cpu"))
     assert mask.shape == (S, S)
     # Upper triangle (future) should be True (masked)
     assert mask[0, 1].item() is True,  "Future token not masked"
     assert mask[1, 0].item() is False, "Past token incorrectly masked"
     assert mask[0, 0].item() is False, "Self-position incorrectly masked"
-    print(f"  [PASS] 3.2  causal mask shape={mask.shape}  upper-tri=True ✓")
+    print(f"  [PASS] 3.2  causal mask shape={mask.shape}  upper-tri=True OK")
 
 
 def test_3_3_generate_ends_at_eos():
-    """3.3 — generate() produces sequences that contain EOS (or are padded after it)."""
+    """3.3 -- generate() produces sequences that contain EOS (or are padded after it)."""
     dec = TextDecoder(vocab_size=VOCAB, d_model=D_MODEL, n_layers=2)
     dec.eval()
 
@@ -144,7 +144,7 @@ def test_3_3_generate_ends_at_eos():
 
 
 def test_3_4_tokenizer_roundtrip():
-    """3.4 — encode → decode round-trip (requires sentencepiece installed)."""
+    """3.4 -- encode -> decode round-trip (requires sentencepiece installed)."""
     try:
         from data.tokenizer import SignTokenizer
         import tempfile, os
@@ -158,13 +158,13 @@ def test_3_4_tokenizer_roundtrip():
             assert "hello" in decoded.lower() or "world" in decoded.lower(), (
                 f"Round-trip failed: got '{decoded}'"
             )
-        print(f"  [PASS] 3.4  tokenizer round-trip: 'hello world' → {ids[:5]}... → '{decoded}'")
+        print(f"  [PASS] 3.4  tokenizer round-trip: 'hello world' -> {ids[:5]}... -> '{decoded}'")
     except ImportError:
         print("  [SKIP] 3.4  sentencepiece not installed")
 
 
 def test_3_5_cross_attention_to_encoder():
-    """3.5 — Different encoder outputs produce different decoder outputs."""
+    """3.5 -- Different encoder outputs produce different decoder outputs."""
     dec = TextDecoder(vocab_size=VOCAB, d_model=D_MODEL, n_layers=2)
     dec.eval()
 
@@ -177,12 +177,12 @@ def test_3_5_cross_attention_to_encoder():
         out2 = dec(tgt, mem2)
 
     diff = (out1 - out2).abs().mean().item()
-    assert diff > 1e-4, "Decoder outputs identical for different memories — cross-attention broken"
+    assert diff > 1e-4, "Decoder outputs identical for different memories -- cross-attention broken"
     print(f"  [PASS] 3.5  cross-attention active: diff={diff:.4f}")
 
 
 def test_3_6_vocab_size_consistency():
-    """3.6 — Vocab size consistent between embedding and output projection."""
+    """3.6 -- Vocab size consistent between embedding and output projection."""
     dec = TextDecoder(vocab_size=VOCAB, d_model=D_MODEL, n_layers=2)
     assert dec.token_emb.weight.shape == (VOCAB, D_MODEL)
     assert dec.output_proj.weight.shape == (VOCAB, D_MODEL)
@@ -221,4 +221,4 @@ if __name__ == "__main__":
         print(f"  TOTAL FAILED: {total_failed}")
         sys.exit(1)
     else:
-        print("  ALL F2+F3 GATE CHECKS PASSED ✓")
+        print("  ALL F2+F3 GATE CHECKS PASSED OK")

@@ -1,9 +1,9 @@
 """
-F1 Gate Checks — Visual Encoder
+F1 Gate Checks -- Visual Encoder
 All tests run on CPU with dummy tensors.
 
 Gate checks:
-  1.1  Input (B, T, 3, 256, 256) → output (B, T, 512)
+  1.1  Input (B, T, 3, 256, 256) -> output (B, T, 512)
   1.2  Spatial attention weights are in [0, 1]
   1.3  Works with landmark_heatmaps=None (no crash, uses full features)
   1.4  ResNet backbone frozen (.requires_grad = False)
@@ -35,7 +35,7 @@ def _dummy_heatmaps() -> torch.Tensor:
 
 
 def test_1_1_output_shape():
-    """1.1 — Input (B, T, 3, 256, 256) → output (B, T, D_MODEL)."""
+    """1.1 -- Input (B, T, 3, 256, 256) -> output (B, T, D_MODEL)."""
     model = VisualEncoder(d_model=D_MODEL, freeze_backbone=True)
     model.eval()
 
@@ -49,7 +49,7 @@ def test_1_1_output_shape():
 
 
 def test_1_2_attention_weights_range():
-    """1.2 — SpatialAttention weights are in [0, 1]."""
+    """1.2 -- SpatialAttention weights are in [0, 1]."""
     attn_module = SpatialAttention(in_channels=512)
     attn_module.eval()
 
@@ -71,7 +71,7 @@ def test_1_2_attention_weights_range():
 
 
 def test_1_3_no_heatmap_no_crash():
-    """1.3 — Passing heatmaps=None works without crash."""
+    """1.3 -- Passing heatmaps=None works without crash."""
     model = VisualEncoder(d_model=D_MODEL, freeze_backbone=True)
     model.eval()
 
@@ -79,11 +79,11 @@ def test_1_3_no_heatmap_no_crash():
         out = model(_dummy_frames(), heatmaps=None)
 
     assert out.shape == (B, T, D_MODEL), f"Shape wrong: {out.shape}"
-    print(f"  [PASS] 1.3  no heatmap → output={out.shape}")
+    print(f"  [PASS] 1.3  no heatmap -> output={out.shape}")
 
 
 def test_1_4_backbone_frozen():
-    """1.4 — ResNet backbone is frozen (no requires_grad)."""
+    """1.4 -- ResNet backbone is frozen (no requires_grad)."""
     model = VisualEncoder(d_model=D_MODEL, freeze_backbone=True)
 
     for name, param in model.backbone.named_parameters():
@@ -100,7 +100,7 @@ def test_1_4_backbone_frozen():
 
 
 def test_1_5_attention_changes_output():
-    """1.5 — Output with heatmap differs from output without (attention is active)."""
+    """1.5 -- Output with heatmap differs from output without (attention is active)."""
     model = VisualEncoder(d_model=D_MODEL, freeze_backbone=True)
     model.eval()
 
@@ -112,7 +112,7 @@ def test_1_5_attention_changes_output():
 
     diff = (out_hm - out_no_hm).abs().mean().item()
     assert diff > 1e-6, (
-        f"Attention had no effect — outputs identical (diff={diff:.2e})"
+        f"Attention had no effect -- outputs identical (diff={diff:.2e})"
     )
     print(f"  [PASS] 1.5  attention changes output (mean diff={diff:.4f})")
 
@@ -142,4 +142,4 @@ if __name__ == "__main__":
         print(f"  FAILED: {failed}/{len(tests)}")
         sys.exit(1)
     else:
-        print("  ALL F1 GATE CHECKS PASSED ✓")
+        print("  ALL F1 GATE CHECKS PASSED OK")

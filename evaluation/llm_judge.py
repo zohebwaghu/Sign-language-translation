@@ -1,5 +1,5 @@
 """
-F5 — LLM-as-Judge using Claude (claude-sonnet-4-6).
+F5 -- LLM-as-Judge using Claude (claude-sonnet-4-6).
 
 Scores 200+ test samples on three dimensions:
   - Adequacy  (1-5): Does the translation convey the same meaning?
@@ -96,7 +96,7 @@ def judge_batch(
         batch_refs = refs[start:end]
         batch_num += 1
 
-        logger.info(f"  Judging samples {start+1}–{end} / {n} (batch {batch_num})")
+        logger.info(f"  Judging samples {start+1}-{end} / {n} (batch {batch_num})")
 
         for hyp, ref in zip(batch_hyps, batch_refs):
             score = _score_single(client, model, hyp, ref, retry_delay)
@@ -141,7 +141,7 @@ def _score_single(
             )
 
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON parse error (attempt {attempt+1}): {e} — response: {text[:100]}")
+            logger.warning(f"JSON parse error (attempt {attempt+1}): {e} -- response: {text[:100]}")
         except Exception as e:
             logger.warning(f"API error (attempt {attempt+1}): {e}")
             time.sleep(retry_delay * (attempt + 1))
@@ -204,7 +204,7 @@ def print_examples(
 def save_scores(scores: List[JudgeScore], path: str) -> None:
     with open(path, "w") as f:
         json.dump([s.to_dict() for s in scores], f, indent=2)
-    logger.info(f"Saved {len(scores)} judge scores → {path}")
+    logger.info(f"Saved {len(scores)} judge scores -> {path}")
 
 
 def summarise(scores: List[JudgeScore]) -> Dict[str, float]:
